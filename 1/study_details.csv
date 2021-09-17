@@ -1,3 +1,0 @@
-"study_id","created","user","experiment","folder","group","timeout_threshhold","wanted_n","started_n","active_n","timed_out_n","completed_n","completion_rate","entry_link","send_link","return_link","completion_link"
-1,"2021-09-17 17:23:50","ajus","babam",NA,1,30,10,0,0,0,0,0,"127.0.0.1/PavloviaSwitch/?start=1","https://run.pavlovia.org/ajus/babam//?group=1","'$'127.0.0.1/PavloviaSwitch/?completed=' + expInfo['SwitcherID']'","none"
-1,"2021-09-17 17:23:50","ajus","babam",NA,2,30,10,1,1,0,0,0,"127.0.0.1/PavloviaSwitch/?start=1","https://run.pavlovia.org/ajus/babam//?group=2","'$'127.0.0.1/PavloviaSwitch/?completed=' + expInfo['SwitcherID']'","none"

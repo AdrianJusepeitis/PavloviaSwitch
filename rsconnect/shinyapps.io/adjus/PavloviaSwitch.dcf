@@ -1,0 +1,14 @@
+name: PavloviaSwitch
+title: PavloviaSwitch
+username:
+account: adjus
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4658625
+bundleId: 5043937
+url: https://adjus.shinyapps.io/PavloviaSwitch/
+when: 1631895980.64102
+lastSyncTime: 1631895980.64102
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: 1/participants.csv|1/study_details.csv

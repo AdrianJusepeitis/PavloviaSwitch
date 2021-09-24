@@ -15,8 +15,8 @@ server <- function(input, output, session) {
       started_study <- getQueryString()$start %>% as.character()
       
       # update participant list and study details
-      study_details <- read.csv(paste0(started_study,"/study_details.csv"))
-      participants <- read.csv(paste0(started_study,"/participants.csv")) %>% separate(SwitchID, sep = "_", into = c("study", "group_tmp", "ID"))
+      study_details <- read.csv(paste0("studies/",started_study,"/study_details.csv"))
+      participants <- read.csv(paste0("studies/",started_study,"/participants.csv")) %>% separate(SwitchID, sep = "_", into = c("study", "group_tmp", "ID"))
       # set time outs
       participants$status[participants$status == "active" & strptime(participants$started, format = "%Y-%m-%d %H:%M:%S") < Sys.time() - as.numeric(study_details$timeout_threshhold[1])*60] <- "timed out"
       # update study details
@@ -40,12 +40,12 @@ server <- function(input, output, session) {
       # update study details
       study_details$started_n[study_details$group == selected_group] <- study_details$started_n[study_details$group == selected_group] + 1
       study_details$active_n[study_details$group == selected_group] <- study_details$active_n[study_details$group == selected_group] + 1
-      write.csv(study_details, paste0(started_study,"/study_details.csv"), row.names = F)
+      write.csv(study_details, paste0("studies/",started_study,"/study_details.csv"), row.names = F)
       
       # update participant list
       write.csv(rbind(participants %>% unite(col = "SwitchID", c(1,2,3), sep = "_"),
                       c(SwitchID = SwitchID, group = selected_group, started = Sys.time() %>% as.character, status = "active", time_taken = NA) %>% as.list()),
-                paste0(started_study,"/participants.csv"), row.names = F)
+                paste0("studies/",started_study,"/participants.csv"), row.names = F)
       
       # redirect
       singleton(tags$head(tags$script(HTML("window.location.replace('URL');" %>% 
@@ -63,16 +63,16 @@ server <- function(input, output, session) {
       # get id
       completed_id <- getQueryString()$completed %>% as.character()
       # which study
-      completed_study <- strsplit(completed_id, split = "_")[[1]][3]
+      completed_study <- strsplit(completed_id, split = "_")[[1]][1]
       # update partcipant list
-      participants <- read.csv(paste0(completed_study,"/participants.csv"))
+      participants <- read.csv(paste0("studies/",completed_study,"/participants.csv"))
       participants$status[participants$SwitchID == completed_id] <- "completed"
-      participants$time_taken[participants$SwitchID == completed_id] <- (Sys.time() - strptime(participants$started[participants$SwitchID == completed_id], format = "%Y-%m-%d %H:%M:%S")) %>% round() %>% seconds_to_period() %>% as.character()
+      participants$time_taken[participants$SwitchID == completed_id] <- difftime(Sys.time(), strptime(participants$started[participants$SwitchID == completed_id], format = "%Y-%m-%d %H:%M:%S"), units = "sec") %>% round() %>% seconds_to_period() %>% as.character()
       
-      write.csv(participants, paste0(completed_study,"/participants.csv"), row.names = F)
+      write.csv(participants, paste0("studies/",completed_study,"/participants.csv"), row.names = F)
       
       # update study details
-      study_details <- read.csv(paste0(completed_study,"/study_details.csv"))
+      study_details <- read.csv(paste0("studies/",completed_study,"/study_details.csv"))
       study_details[,c("active_n","timed_out_n","completed_n")] <- table(participants$group %>% factor(levels = study_details$group),
                                                                          participants$status %>% factor(levels = c("active","timed out","completed")))
       # redirect
@@ -182,10 +182,10 @@ server <- function(input, output, session) {
     req(input$username, input$studyname)
     
     # which is the next ID for a study?
-    new_study_id <- max(c(list.files() %>% as.numeric(),0), na.rm = T) + 1
+    new_study_id <- max(c(list.files("studies") %>% as.numeric(),0), na.rm = T) + 1
     
     # create directory
-    dir.create(new_study_id %>% as.character())
+    dir.create(paste0("studies/",new_study_id %>% as.character()))
     
     # write study details
     new_study <- data.frame(study_id = new_study_id, 
@@ -201,23 +201,23 @@ server <- function(input, output, session) {
                             timed_out_n = 0,
                             completed_n = 0,
                             completion_rate = 0,
-                            entry_link = paste0(session$clientData$url_hostname,"/PavloviaSwitch/?start=",new_study_id),
+                            entry_link = paste0(session$clientData$url_hostname, session$clientData$url_pathname,"?start=",new_study_id),
                             send_link = paste0("https://run.pavlovia.org/",input$username,"/",input$studyname,"/",input$foldername,"/?group=",seq(input$n_groups)),
-                            return_link = paste0("'$\'", session$clientData$url_hostname, "/PavloviaSwitch/?completed=\' + expInfo[\'SwitcherID\']'"),
+                            return_link = paste0("'$\'", session$clientData$url_hostname, session$clientData$url_pathname, "?completed=\' + expInfo[\'SwitcherID\']'"),
                             completion_link = ifelse(input$endlink != "", input$endlink, "none")
     )
-    write.csv(new_study, paste0(new_study_id,"/study_details.csv"), row.names = F)
+    write.csv(new_study, paste0("studies/",new_study_id,"/study_details.csv"), row.names = F)
     
     # prepare participants
     new_participants <- data.frame(SwitchID = as.character(), group = as.character(), started = as.character(), status = as.character(), time_taken = as.character())
     
-    write.csv(new_participants, paste0(new_study_id,"/participants.csv"), row.names = F)
+    write.csv(new_participants, paste0("studies/",new_study_id,"/participants.csv"), row.names = F)
     
     # sucess message
     shinyalert("Success!",
                paste0("You created a new switch with the ID <b>", new_study_id,"</b>.<br><br>
                       Please note this ID down. You can use it to view the details of your data collection later.<br><br>
-                      Provide your subjects with the following link to access your study: <br><b>",session$clientData$url_hostname,"/PavloviaSwitch/?start=",new_study_id,"</b>"),
+                      Provide your subjects with the following link to access your study: <br><b>",session$clientData$url_hostname, session$clientData$url_pathname,"?start=",new_study_id,"</b>"),
                type = "success",
                html = T, size = "m")
     
@@ -230,10 +230,10 @@ server <- function(input, output, session) {
   # when viewing ----
   # produce list of study details and participants
   viewed_study <- reactive({
-    if(input$study_id_view %in% list.files()){
+    if(input$study_id_view %in% list.files("studies")){
       # read
-      study_details <- read.csv(paste0(input$study_id_view,"/study_details.csv")) 
-      participants <- read.csv(paste0(input$study_id_view,"/participants.csv"))
+      study_details <- read.csv(paste0("studies/",input$study_id_view,"/study_details.csv")) 
+      participants <- read.csv(paste0("studies/",input$study_id_view,"/participants.csv"))
       # update
       # set time outs
       participants$status[participants$status == "active" & strptime(participants$started, format = "%Y-%m-%d %H:%M:%S") < Sys.time() - as.numeric(study_details$timeout_threshhold[1])*60] <- "timed out"
@@ -249,7 +249,7 @@ server <- function(input, output, session) {
   
   # render table of study details
   output$study_details <- renderTable({
-    if(input$study_id_view %in% list.files()){
+    if(input$study_id_view %in% list.files("studies")){
       table <- viewed_study()$study_details %>%  select(c("group",	"wanted_n", "started_n","active_n", "timed_out_n", "completed_n", "completion_rate"))
       names(table) <- c("group", "n wanted", "n started","n currently active", "n timed out or aborted", "n completed", "completion rate")
       table
@@ -258,7 +258,7 @@ server <- function(input, output, session) {
   
   #render info text
   output$study_info <- renderText({
-    if(input$study_id_view %in% list.files()){
+    if(input$study_id_view %in% list.files("studies")){
       
       paste0("Related pavlovia project: <b>", viewed_study()$study_details$user[1],"/",viewed_study()$study_details$experiment[1], "</b><br>",
              "Link to access the study: <b>", viewed_study()$study_details$entry_link[1], "</b><br>",
@@ -269,7 +269,7 @@ server <- function(input, output, session) {
   
   # render participant table
   output$participants <- renderDataTable({
-    if(input$study_id_view %in% list.files()){
+    if(input$study_id_view %in% list.files("studies")){
       table <- viewed_study()$participants
       names(table) <- c("SwitchID", "group","started", "status", "time taken")
       table
@@ -278,7 +278,7 @@ server <- function(input, output, session) {
   
   # download
   output$download_button <- renderUI(
-    if(input$study_id_view %in% list.files()){
+    if(input$study_id_view %in% list.files("studies")){
       downloadButton("download_participants", "Download participant data", class = "btn btn-info")
     }else{req(input$study_id_view)
       "This ID does not exist."}

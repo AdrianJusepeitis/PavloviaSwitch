@@ -24,37 +24,56 @@ server <- function(input, output, session) {
                                                                          participants$status %>% factor(levels = c("active","timed out","completed")))
       # # free places?
       if(!all(study_details$wanted_n == (study_details$completed_n + study_details$active_n))){
-      
-      # which group ?
-      selected_group <- sample(
-        which(
-          (study_details$completed_n + study_details$active_n)/study_details$wanted_n == min((study_details$completed_n+study_details$active_n)/study_details$wanted_n)
-        ), 1) %>% as.character()
-      
-      # which participant id ?
-      ID <- max(c(participants$ID[participants$group == selected_group] %>% as.numeric(),0), na.rm = T) + 1 
-      
-      # combine to SwitchID
-      SwitchID <- paste0(c(started_study, selected_group, ID), collapse = "_")
-      
-      # update study details
-      study_details$started_n[study_details$group == selected_group] <- study_details$started_n[study_details$group == selected_group] + 1
-      study_details$active_n[study_details$group == selected_group] <- study_details$active_n[study_details$group == selected_group] + 1
-      write.csv(study_details, paste0("studies/",started_study,"/study_details.csv"), row.names = F)
-      
-      # update participant list
-      write.csv(rbind(participants %>% unite(col = "SwitchID", c(1,2,3), sep = "_"),
-                      c(SwitchID = SwitchID, group = selected_group, started = Sys.time() %>% as.character, status = "active", time_taken = NA) %>% as.list()),
-                paste0("studies/",started_study,"/participants.csv"), row.names = F)
-      
-      # redirect
-      singleton(tags$head(tags$script(HTML("window.location.replace('URL');" %>% 
-                                        gsub("URL",
-                                             paste0(study_details$send_link[study_details$group == selected_group],"&SwitchID=",SwitchID
+        
+        # which group ?
+        selected_group <- sample(
+            study_details %>% 
+              group_by(group) %>% 
+              summarise(full = (completed_n + active_n)/ wanted_n) %>% 
+              filter(full == min(full)) %>% 
+              pull(group) %>% 
+              as.character(), 1)
+        
+        # which participant id ?
+        ID <- max(c(participants$ID[participants$group == selected_group] %>% as.numeric(),0), na.rm = T) + 1 
+        
+        # combine to SwitchID
+        SwitchID <- paste0(c(started_study, selected_group, ID), collapse = "_")
+        
+        # update participant list
+        participants <- rbind(participants %>% unite(col = "SwitchID", c(1,2,3), sep = "_"),
+                              c(SwitchID = SwitchID, group = selected_group, started = Sys.time() %>% as.character, status = "active", time_taken = NA) %>% as.list())
+        
+        write.csv(participants,
+                  paste0("studies/",started_study,"/participants.csv"), row.names = F)
+        
+        # update study details
+        study_details$started_n <- table(participants$group %>% factor(levels = study_details$group))
+        study_details$active_n <- table(participants$group %>% factor(levels = study_details$group),
+                                        participants$status %>% factor(levels = c("active","timed out","completed")))[,"active"]
+        write.csv(study_details, paste0("studies/",started_study,"/study_details.csv"), row.names = F)
+        
+        # attach query strings
+        q <- getQueryString()
+        
+        qstr <- if(all(names(q) == "start")){""}else{
+          q %>% 
+            as.data.frame() %>% 
+            select(-start) %>% 
+            pivot_longer(col = everything()) %>% 
+            unite(col = "string", c(name, value), sep = "=") %>% 
+            pull(string) %>% 
+            paste(collapse = "&")%>%
+            paste0("&",.)}
+        
+        # redirect
+        singleton(tags$head(tags$script(HTML("window.location.replace('URL');" %>% 
+                                               gsub("URL",
+                                                    paste0(study_details$send_link[study_details$group == selected_group], "&SwitchID=", SwitchID,qstr
                                                     ),
-                                             .))
-                                        )))
-      
+                                                    .))
+        )))
+        
       }else{"This experiment is currently not available."}
       
     }else if("completed" %in% names(getQueryString())){
@@ -145,13 +164,13 @@ server <- function(input, output, session) {
             <li>You may enter a <em>completion&nbsp;</em><em>link</em> that participants are redirected to, after finishing your experiments and coming back to PavloviaSwitch (e.g., a prolific completion link).</li>
             <li>Specify <em>how many different groups</em> your participants should be assigned to.</li>
             <li>Specify <em>how many participants</em> are needed in each group. PavloviaSwitch will not send more participants to your experiment than specified here.</li>
-            <li>Click &quot;Create new switch&quot; and note down the ID and the entry link that are displayed. This is the link that will direct your participants to your experiments via PavloviaSwitcher.<br><br></li>
+            <li>Click &quot;Create new switch&quot; and note down the ID and the entry link that are displayed. This is the link that will direct your participants to your experiments via PavloviaSwitch.<br><br></li>
         </ol>
     </li>
     <li>&nbsp;<u>Prepare your experiment:</u> Open your experiment in PsychoPy and open the Experiment Settings<br><br>
         <ol>
             <li>Create two &quot;Experiment info variables&quot; called &quot;SwitchID&quot; and &quot;group&quot;.</li>
-            <li>Under &quot;Online/Completed URL&quot; enter URL</li>
+            <li>Under &quot;Online/Completed URL&quot; enter redirectURL</li>
             <li>Use the group variable (expInfo[&apos;group&apos;]) to design your experiment to be different for each group.</li>
             <li>Sync your experiment with pavlovia<br><br></li>
         </ol>
@@ -159,7 +178,7 @@ server <- function(input, output, session) {
     <li><u>Start collecting data</u> by distributing the entry link to your subjects.<br><br></li>
     <li><u>View the progress</u> of your data collection by entering your study ID in the &quot;View switch&quot; tab.</li>
 </ol>
-<p>&nbsp;</p>')
+<p>&nbsp;</p>' %>% gsub("redirectURL", paste0("$\'https://", session$clientData$url_hostname, session$clientData$url_pathname, "?completed=\' + expInfo[\'SwitchID\']"),.))
   
   # render inputs for n per group
   output$ninputs <- renderUI({
@@ -188,24 +207,27 @@ server <- function(input, output, session) {
     dir.create(paste0("studies/",new_study_id %>% as.character()))
     
     # write study details
-    new_study <- data.frame(study_id = new_study_id, 
-                            created = Sys.time() %>% as.character(),
-                            user = input$username %>% tolower(), 
-                            experiment = input$studyname %>% tolower(),
-                            folder = input$foldername %>% tolower(),
-                            group = seq(input$n_groups),
-                            timeout_threshhold = input$timeout_threshhold,
-                            wanted_n = reactiveValuesToList(input) %>% as.data.frame() %>% select(contains("ngroup")) %>% unlist(),
-                            started_n = 0,
-                            active_n = 0,
-                            timed_out_n = 0,
-                            completed_n = 0,
-                            completion_rate = 0,
-                            entry_link = paste0(session$clientData$url_hostname, session$clientData$url_pathname,"?start=",new_study_id),
-                            send_link = paste0("https://run.pavlovia.org/",input$username,"/",input$studyname,"/",input$foldername,"/?group=",seq(input$n_groups)),
-                            return_link = paste0("'$\'", session$clientData$url_hostname, session$clientData$url_pathname, "?completed=\' + expInfo[\'SwitcherID\']'"),
-                            completion_link = ifelse(input$endlink != "", input$endlink, "none")
-    )
+    new_study <- reactiveValuesToList(input) %>% 
+      as.data.frame() %>% 
+      select(contains("ngroup")) %>%
+      pivot_longer(cols = contains("ngroup"), names_to = "group", values_to = "wanted_n", names_prefix = "ngroup") %>%
+      arrange(group) %>%
+      mutate(study_id = new_study_id, 
+             created = Sys.time() %>% as.character(),
+             user = input$username %>% tolower(), 
+             experiment = input$studyname %>% tolower(),
+             folder = input$foldername %>% tolower(),
+             timeout_threshhold = input$timeout_threshhold,
+             started_n = 0,
+             active_n = 0,
+             timed_out_n = 0,
+             completed_n = 0,
+             completion_rate = 0,
+             entry_link = paste0(session$clientData$url_hostname, session$clientData$url_pathname,"?start=",new_study_id),
+             send_link = paste0("https://run.pavlovia.org/",input$username,"/",input$studyname,"/",input$foldername,"/?group=", group),
+             completion_link = ifelse(input$endlink != "", input$endlink, "none")
+      ) %>% arrange(group)
+    
     write.csv(new_study, paste0("studies/",new_study_id,"/study_details.csv"), row.names = F)
     
     # prepare participants
@@ -238,6 +260,7 @@ server <- function(input, output, session) {
       # set time outs
       participants$status[participants$status == "active" & strptime(participants$started, format = "%Y-%m-%d %H:%M:%S") < Sys.time() - as.numeric(study_details$timeout_threshhold[1])*60] <- "timed out"
       # update study details
+      study_details$started_n <- table(participants$group %>% factor(levels = study_details$group))
       study_details[,c("active_n","timed_out_n","completed_n")] <- table(participants$group %>% factor(levels = study_details$group),
                                                                          participants$status %>% factor(levels = c("active","timed out","completed")))
       study_details$completion_rate <- study_details$completed_n/study_details$started_n
@@ -272,7 +295,7 @@ server <- function(input, output, session) {
     if(input$study_id_view %in% list.files("studies")){
       table <- viewed_study()$participants
       names(table) <- c("SwitchID", "group","started", "status", "time taken")
-      table
+      table %>% arrange(desc(started))
     }
   })
   
